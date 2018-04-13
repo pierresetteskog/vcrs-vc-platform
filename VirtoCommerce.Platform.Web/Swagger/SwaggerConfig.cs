@@ -84,32 +84,37 @@ namespace VirtoCommerce.Platform.Web.Swagger
             });
         }
 
+      private static string GetHeaderValue(HttpRequestHeaders headers, string header)
+        {
+            return headers.FirstOrDefault(h => h.Key.ToLower() == header.ToLower()).Value?.FirstOrDefault()?.Split(',')[0];
+        }
+
         private static Uri ComputeHostAsSeenByOriginalClient(HttpRequestMessage message)
         {
             if (message.RequestUri.Scheme != Uri.UriSchemeHttps)
             {
+
                 //we are behind a reverse proxy, use the host that was used by the client
-                if (message.Headers.Contains("X-Forwarded-Host"))
+
+                //when multiple apache httpd are chained, each proxy append to the header 
+                //with a comma (see //https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#x-headers).
+                string protocol = GetHeaderValue(message.Headers, "X-Forwarded-Proto");
+                var host = GetHeaderValue(message.Headers, "X-Forwarded-Host")?? GetHeaderValue(message.Headers, "x-ORIGINAL-HOST");
+                var port = GetHeaderValue(message.Headers, "x-Forwarded-Port");
+
+                if (String.IsNullOrEmpty(protocol)) protocol = message.RequestUri.Scheme;
+                if (String.IsNullOrEmpty(host)) host = message.RequestUri.Host;
+                if (String.IsNullOrEmpty(port)) port = message.RequestUri.Port.ToString();
+
+                var uriBuilder = new UriBuilder(message.RequestUri)
                 {
-                    //when multiple apache httpd are chained, each proxy append to the header 
-                    //with a comma (see //https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#x-headers).
-                    string protocol = message.Headers.GetValues("X-Forwarded-Proto")?.FirstOrDefault()?.Split(',')[0];
-                    var host = message.Headers.GetValues("X-Forwarded-Host")?.FirstOrDefault()?.Split(',')[0];
-                    var port =  message.Headers.GetValues("x-Forwarded-Port")?.FirstOrDefault()?.Split(',')[0];
+                    Scheme = protocol,
+                    Host = host,
+                    Port = Int32.Parse(port)
+                };
+                return uriBuilder.Uri;
 
-                    if (String.IsNullOrEmpty(protocol)) protocol = message.RequestUri.Scheme;
-                    if (String.IsNullOrEmpty(host)) host = message.RequestUri.Host;
-                    if (String.IsNullOrEmpty(port)) port = message.RequestUri.Port.ToString();
 
-                    var uriBuilder = new UriBuilder(message.RequestUri)
-                    {
-                        Scheme = protocol,
-                        Host = host,
-                        Port = Int32.Parse(port)
-                    };
-                    return uriBuilder.Uri;
-
-                }
             }
             return message.RequestUri;
         }
